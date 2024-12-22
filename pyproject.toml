@@ -1,0 +1,25 @@
+[build-system]
+requires = ["cython>=3.0", "pip>=23.0", "setuptools>=61.0", "wheel",]
+[project]
+name = "Grid-Server"
+version = "0.0.5"
+description = "A grid server and client"
+keywords = []
+classifiers = [
+	"Natural Language :: English",
+	"Operating System :: POSIX :: Linux",
+	"Operating System :: MacOS :: MacOS X",
+	"Programming Language :: Python",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: Implementation :: CPython",
+]
+dependencies = [
+	"numpy",
+	"pygame",
+]
+[tool.setuptools.packages.find]
+where = ["."]
+
+
+[tool.distutils.bdist_wheel]
+universal = true
