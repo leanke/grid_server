@@ -7,10 +7,6 @@ import time
 import numpy as np
 from grid_server.classes.environment import GridWorld
 from grid_server.classes.player import Player
-import struct
-import zlib
-
-
 
 
 class GameServer:
@@ -41,66 +37,92 @@ class GameServer:
         os.system(f"touch {self.config['array_path']}")
         os.makedirs(self.userpath)
         os.makedirs(self.logpath)
+    
+    def create_packet(self, type, data):
+        packet = {
+            'type': type,
+            'data': data
+        }
+        packet = json.dumps(packet).encode('utf-8')
+        length = len(packet).to_bytes(4, byteorder='big')
+        return length + packet
+
+    def unpack_packet(self, packet):
+        length = int.from_bytes(packet[:4], byteorder='big')
+        data = json.loads(packet[4:length+4].decode('utf-8'))
+        return data
 
     def handle_client(self, client_socket):
         try:
-            # Receive username and load player data
-            username = client_socket.recv(1024).decode('utf-8')
+            data = client_socket.recv(1024)
+            req = self.unpack_packet(data)
+            username = req['data']['username']
+            password = req['data']['password']
             path = self.userpath + username
+
             if not os.path.exists(f'{path}.ini'):
-                client_socket.send(b'USER_NOT_FOUND')
-                create_user = client_socket.recv(1024).decode('utf-8')
-                if create_user == 'y':
-                    os.system(f"touch {path}.ini")
-                    os.system(f"cp ./grid_server/default.ini {path}.ini")
-                    print(f"Player {username} created")
-                    client_socket.send(b'USER_CREATED')
-                else:
-                    client_socket.send(b'USER_CREATION_ABORTED')
-                    return
+                player = self.create_player(username, password, path)
+                print(f"Creating account for {username}")
+                response = self.create_packet('success', {'data': f'Account created for {username}'}) 
             else:
-                client_socket.send(b'USER_FOUND')
-            player = Player(f'{path}.ini')
-            print(f"Player {username} connected")
-            player.save('base', 'name', username)
-            self.clients.append(client_socket)
+                player = Player(f'{path}.ini')
+                
+                
+            if req['type'] == 'login':
+                if player.get('base', 'password') == password:
+                    print(f"{username} has logged in")
+                    response = self.create_packet('success', {'data': f'Logging into: {username}'})
+                else:
+                    response = self.create_packet('fail', {'data': f'Username or password is incorrect'})
+            else:
+                response = self.create_packet('fail', {'data': f'Account not created for {username}'}) 
+            
+            client_socket.sendall(response)
 
             while True:
-                command = client_socket.recv(1024).decode('utf-8')
-                player = Player(f'{path}.ini')
+                command = client_socket.recv(1024)
+                unpacked_data = self.unpack_packet(command)
+                print(unpacked_data)
+                player = Player(f'{path}.ini') # make an attr of the class instead of relying on the file
+                print(player.name, player.x, player.y)
                 ret = None
-                if command == 'quit':
+                if unpacked_data['data']['move'] == 'quit': # this conditional breaks the client quitting gracefully? maybe .sendall a 'quit' packet?
                     print(f"Player {username} disconnected")
                     self.grid_world.grid.remove(player.x, player.y)
+                    self.clients.remove(client_socket)
+                    client_socket.close()
                     break
-                if command:
-                    ret = self.grid_world.step(player, command)
+                elif unpacked_data['data']['move']:
+                    ret = self.grid_world.step(player, unpacked_data['data']['move'])
+                else:
+                    ret = 'Invalid command'
+
                 self.send_game_state(client_socket, ret)
-                # self.send_player_data(client_socket, player, data=f"{player.name}: {ret}")
         except ConnectionResetError:
             pass
         finally:
             self.clients.remove(client_socket)
             client_socket.close()
 
+    def create_player(self, username, password, path):
+        os.system(f"touch {path}.ini")
+        os.system(f"cp ./grid_server/default.ini {path}.ini")
+        player = Player(f'{path}.ini')
+        player.save('base', 'name', username)
+        player.save('base', 'password', password)
+        return player
+
     def send_game_state(self, client_socket, data):
         state = self.grid_world.grid.game
         screen_data = np.array(state).tobytes()
         encoded_screen_data = base64.b64encode(screen_data).decode('utf-8')
-
-        dict_state = {
+        game_state_packet = {
             'screen': encoded_screen_data,
             'text': data,
         }
-
-        json_data = json.dumps(dict_state)
-        data_length = len(json_data)
-        checksum = zlib.crc32(json_data.encode('utf-8'))  # Calculate checksum
-        header = struct.pack('!II', data_length, checksum)  # 8-byte header: 4 bytes for length, 4 bytes for checksum
-
+        packet = self.create_packet('game_state', game_state_packet)
         try:
-            client_socket.sendall(header)
-            client_socket.sendall(json_data.encode('utf-8'))
+            client_socket.sendall(packet)
         except socket.error as e:
             print(f"Error sending data: {e}")
             self.clients.remove(client_socket)
@@ -110,7 +132,7 @@ class GameServer:
         for client in self.clients:
             self.send_game_state(client, data=None)
 
-    def tick_loop(self):
+    def tick(self):
         while self.running:
             # Update the game world
             self.grid_world.step(None, None)
@@ -119,7 +141,7 @@ class GameServer:
 
     def start(self):
         # Start the tick loop in a separate thread
-        tick_thread = threading.Thread(target=self.tick_loop)
+        tick_thread = threading.Thread(target=self.tick)
         tick_thread.start()
 
         while True:

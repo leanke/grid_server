@@ -1,7 +1,6 @@
 import base64
 import json
 import socket
-import os
 import struct
 import threading
 import numpy as np
@@ -20,10 +19,22 @@ class Client:
         self.response = None
         self.renderer = GridWorldRenderer()  # Assuming this is where the game rendering is managed
         self.username = None
+        self.password = None
         self.button_handler = ButtonHandler()
 
-    def send_command(self, command):
-        self.client.send(command.encode('utf-8'))
+    def create_packet(self, type, data):
+        packet = {
+            'type': type,
+            'data': data
+        }
+        packet = json.dumps(packet).encode('utf-8')
+        length = len(packet).to_bytes(4, byteorder='big')
+        return length + packet
+
+    def unpack_packet(self, packet):
+        length = int.from_bytes(packet[:4], byteorder='big')
+        data = json.loads(packet[4:length+4].decode('utf-8'))
+        return data
 
     def receive_data(self, stdscr, client):
         curses.curs_set(0)
@@ -35,52 +46,27 @@ class Client:
         top_right_pane.border()
         bottom_right_pane = curses.newwin(height // 2, width // 2, height // 2, width // 2)
         bottom_right_pane.border()
+        # self.renderer = GridWorldRenderer()
 
         while True:
             try:
-                header = client.recv(8)
-                if not header:
-                    break
-                data_length, checksum = struct.unpack('!II', header)
-                data = b""
-                while len(data) < data_length:
-                    packet = client.recv(data_length - len(data))
-                    if not packet:
-                        break
-                    data += packet
-
-                if data:
-                    if zlib.crc32(data) != checksum:
-                        error = "Checksum mismatch, data corrupted"
-                        self.print_pane(bottom_right_pane, error)
-                        continue
-
-                    try:
-                        data_rec = data.decode('utf-8')
-                        unpacked_data = json.loads(data_rec)
-
-                        screen_data_b64 = unpacked_data.get("screen")
-                        if screen_data_b64:
-                            screen_data = base64.b64decode(screen_data_b64)
-                            screen_array = np.frombuffer(screen_data, dtype=np.uint8)
-                            screen_array = screen_array.reshape(int(self.config['grid_size']), int(self.config['grid_size']))
-                            self.renderer.render(screen_array, left_pane)
-
-                        text = unpacked_data.get("text", "")
-                        if text:
-                            self.print_pane(bottom_right_pane, text)
-
-                        left_pane.refresh()
-                        top_right_pane.refresh()
-                        bottom_right_pane.refresh()
-
-                    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                        error_message = f"Error decoding data: {e}"
-                        self.print_pane(bottom_right_pane, error_message)
-                        print(f"Raw data: {data}")
-                        continue
+                data = client.recv(1024)
+                req = self.unpack_packet(data)
+                if req['type'] == 'game_state':
+                    screen_data_b64 = req['data']['screen']
+                    screen_data = base64.b64decode(screen_data_b64)
+                    screen_array = np.frombuffer(screen_data, dtype=np.uint8)
+                    screen_array = screen_array.reshape(int(self.config['grid_size']), int(self.config['grid_size']))
+                    self.renderer.render(screen_array, left_pane)
+                if req['data']['text'] is not None:
+                    text = req['data']['text']
+                    self.print_pane(bottom_right_pane, text)
+            
+                left_pane.refresh()
+                top_right_pane.refresh()
+                bottom_right_pane.refresh()
             except (ConnectionResetError, struct.error) as e:
-                print(f"Connection error: {e}")
+                self.print_pane(bottom_right_pane, e)
                 break
 
     def print_pane(self, pane, text):
@@ -98,36 +84,30 @@ class Client:
                 command = sys.stdin.read(1)
                 action = self.button_handler.handle_button_press(command)
                 if action is not None:
-                    client.send(action.encode('utf-8'))
-                if command == 'q':
+                    packet = self.create_packet('move', {'move': action})
+                    # print(packet)
+                    client.sendall(packet)
+                if action == 'quit':
                     self.close()
-                    break
+
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-    def create_user(self):
-        create = input("Player does not exist. Create new player? (y/n): ")
-        self.client.send(create.encode('utf-8'))
-        response = self.client.recv(1024).decode('utf-8')
-        if response == 'USER_CREATED':
-            print("Player created successfully.")
-        else:
-            print("Player creation aborted.")
-            self.close()
-            sys.exit()
-
     def login(self):
         self.username = input("Enter your username: ")
-        self.client.send(self.username.encode('utf-8'))
-        response = self.client.recv(1024).decode('utf-8')
-        if response == 'USER_NOT_FOUND':
-            self.create_user()
-        elif response == 'USER_CREATION_ABORTED':
-            print("Player creation aborted.")
-            self.close()
-            sys.exit()
-        elif response == 'USER_FOUND':
+        self.password = input("Enter your password: ")
+        packet = self.create_packet('login', {'username': self.username, 'password': self.password})
+        self.client.send(packet)
+        rec = self.client.recv(1024)
+        response = self.unpack_packet(rec)
+        if response['type'] == 'success':
+            # print(response['data']['data'])
             self.renderer = GridWorldRenderer()
+        elif response['type'] == 'fail':
+            print(response['data']['data'])
+            self.close()
+            
+
 
     def main(self):
         self.login()
@@ -135,14 +115,10 @@ class Client:
         receive_thread.start()
 
         self.handle_input(None, self.client)
-        # self.login()
-        # receive_thread = threading.Thread(target=curses.wrapper, args=(self.receive_data, self.client))
-        # receive_thread.start()
-
-        # self.handle_input(None, self.client)
 
     def close(self):
         self.client.close()
+        sys.exit()
 
 
 

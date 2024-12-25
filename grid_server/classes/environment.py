@@ -50,6 +50,8 @@ class GridWorld:
                 y = player.y
                 data = player.info()
             if self.grid.game[y][x] != 3:
+                x = x
+                y = y
                 if self.grid.game[y][x] != 0:
                     object_id = self.grid.game[y][x]
                     ob = obj_ids[object_id]

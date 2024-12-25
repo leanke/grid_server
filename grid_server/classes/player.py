@@ -28,6 +28,9 @@ class Player:
         self.config.set(base, name, str(value))
         with open(self.ini_file, 'w') as configfile:
             self.config.write(configfile)
+    
+    def get(self, base, name):
+        return self.config.get(base, name)
 
     def info(self):
         string = (

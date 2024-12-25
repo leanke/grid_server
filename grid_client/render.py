@@ -58,3 +58,4 @@ class GridWorldRenderer:
         # Refresh the left pane to update the screen
         left_pane.refresh()
 
+
