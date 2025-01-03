@@ -1,30 +1,33 @@
 # grid_server
-A basic server and client in python
+A basic server and client in Python.
 
-### Installation
+## Installation
 
-1. clone
-```sh
-git clone https://github.com/leanke/grid_server.git
-```
+1. Clone the repository:
+    ```sh
+    git clone https://github.com/leanke/grid_server.git
+    ```
 
-2. install
-```sh
-pip install -e ./grid_server
-```
+2. Install the package:
+    ```sh
+    pip install -e ./grid_server
+    ```
 
-### Controls
-W, A, S, D - Up, Left, Down, Right
-F - interact with tile infront of player
-E - toggle client panel
-Q - quit
+## Controls
 
-### Running
-start the server
+- **W, A, S, D**: Move Up, Left, Down, Right
+- **F**: Interact with the tile in front of the player
+- **E**: Toggle client panel
+- **Q**: Quit
+
+## Running
+
+To start the server:
 ```sh
 python run.py --mode server
 ```
-or to run the client
+
+To run the client:
 ```sh
 python run.py --mode client
 ```
