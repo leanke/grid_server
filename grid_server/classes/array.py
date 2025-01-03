@@ -17,7 +17,7 @@ class GameArray:
         for row in range(self.world.shape[0]):
             for cell in range(self.world.shape[1]):
                 self.world[row][cell] = {'id': 0, 'attributes': {'type': None}}
-        wall = {'id': 4, 'attributes': {'type': 'wall'}}
+        wall = {'id': 4, 'attributes': {'type': 'wall', 'mod': None}}
         self.world[0, :] = wall
         self.world[-1, :] = wall
         self.world[:, 0] = wall

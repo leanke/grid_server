@@ -96,6 +96,9 @@ class GridWorldRenderer:
             tile_panel.addstr(2, 1, f"  Combat Level: {player['combat_level']}")
             tile_panel.addstr(3, 1, f"  Health: {player['health']}")
             tile_panel.addstr(4, 1, f"  Type: {player['base']['type']}")
+        elif menu['tile']['id'] == 4:
+            tile_panel.addstr(1, 1, "Wall:")
+            tile_panel.addstr(2, 1, "  Impassable")
         else:
             tile_type = menu['tile']['attributes']['type']
             if menu['tile']['attributes']['mod'] is not None:

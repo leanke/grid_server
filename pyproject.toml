@@ -15,7 +15,6 @@ classifiers = [
 ]
 dependencies = [
 	"numpy",
-	"pygame",
 ]
 [tool.setuptools.packages.find]
 where = ["."]
