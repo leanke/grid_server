@@ -1,0 +1,39 @@
+{
+    "base": {
+        "pid": 100000,
+        "name": "None",
+        "password": "None",
+        "rank": 1,
+        "title": "None",
+        "type": "None"
+    },
+    "stats": {
+        "x": 1,
+        "y": 1,
+        "direction": "left",
+        "total_time": 0
+    },
+    "skills": {
+        "attack": 1,
+        "defence": 1,
+        "health": 1,
+        "woodcutting": 1,
+        "mining": 1,
+        "firemaking": 1
+    },
+    "xp": {
+        "attack": 0,
+        "defence": 0,
+        "health": 0,
+        "woodcutting": 0,
+        "mining": 0,
+        "firemaking": 0
+    },
+    "health": 10,
+    "inventory": []
+}
+
+
+
+
+

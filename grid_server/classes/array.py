@@ -1,78 +1,74 @@
-
 import numpy as np
-from grid_server.classes.data import objects, test_array
-
+from grid_server.classes.data import objects, object_ids
 
 class GameArray:
-    def __init__(self, game=test_array):
-        self.game = game
-        if game is not None:
-            x, y = game.shape
-            self.width = x
-            self.height = y
-            self.object = objects
+    def __init__(self, game_state=None):
+        if game_state is not None:
+            self.world = self.load_from_file(game_state)
         else:
-            self.width = 20
-            self.height = 20
-            self.object = objects
-            self.game = np.zeros((self.height, self.width), dtype=np.int8)
-            self.object = objects
+            self.world = np.zeros((100, 100), dtype=object)
+            self.load_world()
+        self.shape = self.world.shape
+        self.ids_object = object_ids
+        self.object_list = objects
+        self.object_ids = {value: key for key, value in object_ids.items()}
 
-    def build_array_from_json(self, config):
-        self.game = np.zeros((config["height"], config["width"]), dtype=np.int8)
-        self.object = config["object"]
-        self.load_objects()
-        return self.game
+    def load_world(self) -> None:
+        for row in range(self.world.shape[0]):
+            for cell in range(self.world.shape[1]):
+                self.world[row][cell] = {'id': 0, 'attributes': {'type': None}}
+        wall = {'id': 4, 'attributes': {'type': 'wall', 'mod': None}}
+        self.world[0, :] = wall
+        self.world[-1, :] = wall
+        self.world[:, 0] = wall
+        self.world[:, -1] = wall
+        for obj in objects:
+            id = obj['obj_id']
+            self.place_object(obj['coords'][0], obj['coords'][1], id, obj['attr'])
 
-    def save_to_file(self, filename):
-        with open(filename, 'wb') as file:
-            np.save(file, self.game, allow_pickle=True)
+    def check_object(self, x, y) -> int:
+        return self.world[x][y]['id']
 
-    def load_from_file(self, filename):
-        with open(filename, 'rb') as f:
-            self.game = np.load(f)
-        return self.game
-
-    def load_objects(self):
-        for obj_id, objv in self.object.items():
-            for obj in objv:
-                self.place_object(obj['x'], obj['y'], obj_id)
-
-    def place_object(self, x, y, obj_id):
-        if 0 <= x < self.width and 0 <= y < self.height:
-            self.game[y][x] = obj_id
-        else:
-            raise ValueError("Coordinates out of bounds")
+    def place_object(self, x, y, object_id, attributes) -> None:
+        self.world[x][y] = {'id': object_id, 'attributes': attributes}
+    
+    def client_view(self, x, y) -> np.ndarray:
+        view_size = 28
+        start_x = x - view_size // 2
+        start_y = y - view_size // 2
+        end_x = start_x + view_size
+        end_y = start_y + view_size
+        start_x = max(0, start_x)
+        start_y = max(0, start_y)
+        end_x = min(self.world.shape[0], end_x)
+        end_y = min(self.world.shape[1], end_y)
+        view_data = self.world[start_x:end_x, start_y:end_y]
         
-    def move(self, x, y, player):
-        if 0 <= x < self.width and 0 <= y < self.height:
-            self.game[y][x] = 3
+        return view_data
+    
+    def save_to_file(self, filename) -> None:
+        with open(filename, 'wb') as file:
+            np.save(file, self.world, allow_pickle=True)
+
+    def load_from_file(self, filename) -> np.ndarray:
+        with open(filename, 'rb') as f:
+            world = np.load(f, allow_pickle=True)
+        return world
+    
+    def move(self, x, y, player) -> None:
+        if 0 <= x < self.shape[0] and 0 <= y < self.shape[1]:
+            if self.world[x][y]['id'] == 0:
+                self.remove(player.x, player.y)
+                player.x = x
+                player.y = y
+                attr = player.player_data()
+                self.world[x][y] = {'id': 3, 'attributes': attr} # player.pid
         else:
             raise ValueError("Coordinates out of bounds")
     
-    def update(self, flag=False):
-        self.load_objects()
-        return self.game
-
     def remove(self, x, y):
-        if 0 <= x < self.width and 0 <= y < self.height:
-            self.game[y][x] = 0
+        if 0 <= x < self.shape[0] and 0 <= y < self.shape[1]:
+            self.world[x][y] = {'id': 0, 'attributes': {'type': None}}
         else:
             raise ValueError("Coordinates out of bounds")
         
-
-
-# >>> import numpy as np
-# >>> from tempfile import TemporaryFile
-# >>> outfile = TemporaryFile()
-# >>> x = np.arange(10)
-# >>> np.save(outfile, x)
-# >>> _ = outfile.seek(0) # Only needed to simulate closing & reopening file
-# >>> np.load(outfile)
-# array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-# >>> with open('test.npy', 'wb') as f:
-# ...     np.save(f, np.array([1, 2]))
-# ...     np.save(f, np.array([1, 3]))
-# >>> with open('test.npy', 'rb') as f:
-# ...     a = np.load(f)
-# ...     b = np.load(f)
