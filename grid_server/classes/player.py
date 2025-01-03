@@ -1,32 +1,50 @@
 import json
 
 class Player:
-    def __init__(self, json_file, path):
+    def __init__(self, player, path):
         self.path = path + '.json'
-        self.name = json_file['base']['name']
-        self.password = json_file['base']['password']
-        self.id = json_file['base']['id']
-        self.rank = json_file['base']['rank']
-        self.title = json_file['base']['title']
-        self.type = json_file['base']['type']
-        self.x = json_file['stats']['x']
-        self.y = json_file['stats']['y']
-        self.direction = json_file['stats']['direction']
-        self.total_time = json_file['stats']['total_time']
-        self.skills = json_file['skills']
-        self.xp = json_file['xp']  # Initialize XP for each skill
-        self.inventory = json_file['inventory']  # Initialize empty inventory
+        self.name = player['base']['name']
+        self.password = player['base']['password']
+        self.pid = player['base']['pid']
+        self.rank = player['base']['rank']
+        self.title = player['base']['title']
+        self.type = player['base']['type']
+        self.x = player['stats']['x']
+        self.y = player['stats']['y']
+        self.direction = player['stats']['direction']
+        self.total_time = player['stats']['total_time']
+        self.skills = player['skills']
+        self.xp = player['xp']
+        self.inventory = player['inventory']
+        self.max_health = self.skills['health'] * 10
+        self.current_health = self.max_health
+        self.combat_level = (self.skills['attack'] + self.skills['defence'] + self.skills['health']) // 3
 
+    def player_data(self):
+        data = {
+            'base': {'id': self.pid, 'name': self.name, 'type': self.type},
+            'coords': {'x': self.x, 'y': self.y},
+            'direction': self.direction,
+            'skills': self.skills,
+            'xp': self.xp,
+            'max_health': self.max_health,
+            'health': self.current_health,
+            'inventory': self.inventory,
+            'combat_level': self.combat_level
+        }
+        return data
+    
     def save(self):
         save_data = {
-            'base': {'id': self.id, 'name': self.name, 'password': self.password, 'rank': self.rank, 'title': self.title, 'type': self.type},
+            'base': {'pid': self.pid, 'name': self.name, 'password': self.password, 'rank': self.rank, 'title': self.title, 'type': self.type},
             'stats': {'x': self.x, 'y': self.y, 'direction': self.direction, 'total_time': self.total_time},
             'skills': self.skills,
-            'xp': self.xp,  # Save XP data
-            'inventory': self.inventory  # Save inventory data
+            'xp': self.xp,
+            'health': self.current_health,
+            'inventory': self.inventory
         }
         with open(self.path, 'w') as f:
-            json.dump(save_data, f)
+            json.dump(save_data, f, indent=4)
 
     def info(self):
         string = (
@@ -42,7 +60,7 @@ class Player:
             self.check_level_up(skill)
 
     def check_level_up(self, skill):
-        level_up_threshold = 100  # Example threshold for leveling up
+        level_up_threshold = 100
         while self.xp[skill] >= level_up_threshold:
             self.xp[skill] -= level_up_threshold
             self.skills[skill] += 1
@@ -61,3 +79,4 @@ class Player:
             print(f"Removed {item} from inventory.")
         else:
             print(f"{item} not found in inventory.")
+    
