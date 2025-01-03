@@ -1,0 +1,29 @@
+
+{
+    "base": {
+        "name": "None",
+        "password": "None",
+        "id": 0,
+        "rank": 1,
+        "title": "None",
+        "type": "None"
+    },
+    "stats": {
+        "x": 1,
+        "y": 1,
+        "total_time": 0
+    },
+    "skills": {
+        "attack": 1,
+        "defence": 1,
+        "health": 5,
+        "woodcutting": 1,
+        "mining": 1
+    }
+}
+
+
+
+
+
+

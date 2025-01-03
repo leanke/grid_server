@@ -1,15 +1,45 @@
-import base64
 import json
 import socket
 import struct
 import threading
 import numpy as np
-from grid_client.render import GridWorldRenderer
 import tty
 import termios
 import sys
 import curses
-import zlib
+
+COLOR = {
+    'WHITE': ' ',
+    'BLACK': '█',
+    'GREEN': 'G',
+    'BLUE': 'B',
+    'RED': 'R',
+    'YELLOW': 'Y',
+    'CYAN': 'C',
+    'MAGENTA': 'M',
+    'GRAY': '.',
+}
+
+ID = {
+    0: '.',
+    1: 'T',
+    2: 'R',
+    3: 'P',
+    4: '█',
+    5: '?',
+}
+
+class GridWorldRenderer:
+    def __init__(self):
+        self.grid_world = []
+
+    def render(self, state, window):
+        # print(state)
+        window.clear()
+        # window.box()
+        for i, row in enumerate(state):
+            window.addstr(' '.join([f'{ID[val]}' for val in row]) + '\n')
+        window.refresh()
 
 class Client:
     def __init__(self, config, host='localhost', port=12345):
@@ -17,65 +47,70 @@ class Client:
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.connect((host, port))
         self.response = None
-        self.renderer = GridWorldRenderer()  # Assuming this is where the game rendering is managed
+        self.renderer = GridWorldRenderer()
         self.username = None
         self.password = None
         self.button_handler = ButtonHandler()
 
     def create_packet(self, type, data):
         packet = {
-            'type': type,
-            'data': data
+            'type': type if type is not None else 'none',
+            'data': data if data is not None else {}
         }
         packet = json.dumps(packet).encode('utf-8')
         length = len(packet).to_bytes(4, byteorder='big')
         return length + packet
 
-    def unpack_packet(self, packet):
-        length = int.from_bytes(packet[:4], byteorder='big')
-        data = json.loads(packet[4:length+4].decode('utf-8'))
+    def unpack_packet(self, header):
+        data_length = int.from_bytes(header, byteorder='big')
+        data = b''
+        while len(data) < data_length:
+            packet = self.client.recv(data_length - len(data))
+            if not packet:
+                break
+            data += packet
         return data
 
-    def receive_data(self, stdscr, client):
-        curses.curs_set(0)
-        stdscr.clear()
-        height, width = stdscr.getmaxyx()
-        left_pane = curses.newwin(height, width // 2, 0, 0)
-        left_pane.border()
-        top_right_pane = curses.newwin(height // 2, width // 2, 0, width // 2)
-        top_right_pane.border()
-        bottom_right_pane = curses.newwin(height // 2, width // 2, height // 2, width // 2)
-        bottom_right_pane.border()
-        # self.renderer = GridWorldRenderer()
-
+    def receive_data(self, screen, text_window, right_panel):
+        screen.clear()
+        screen.refresh()
+        right_panel.clear()
+        right_panel.box()
+        right_panel.refresh()
+        text_window.clear()
+        text_window.box()
+        text_window.refresh()
         while True:
             try:
-                data = client.recv(1024)
-                req = self.unpack_packet(data)
+                header = self.client.recv(4)
+                if not header:
+                    break
+                data = self.unpack_packet(header)
+                req = json.loads(data.decode('utf-8'))
+                # print(req['data']['text'])
+                
                 if req['type'] == 'game_state':
-                    screen_data_b64 = req['data']['screen']
-                    screen_data = base64.b64decode(screen_data_b64)
-                    screen_array = np.frombuffer(screen_data, dtype=np.uint8)
-                    screen_array = screen_array.reshape(int(self.config['grid_size']), int(self.config['grid_size']))
-                    self.renderer.render(screen_array, left_pane)
-                if req['data']['text'] is not None:
-                    text = req['data']['text']
-                    self.print_pane(bottom_right_pane, text)
-            
-                left_pane.refresh()
-                top_right_pane.refresh()
-                bottom_right_pane.refresh()
+                    if req['data']['screen'] is not None:
+                        self.renderer.render(req['data']['screen'], screen)
+                    if req['data']['text'] is not None:
+                        text_window.clear()
+                        text_window.box()
+                        text_window.addstr(1, 1, req['data']['text'])
+                        text_window.refresh()
+                    
+                    right_panel.box()
+                    right_panel.addstr(1, 1, f"Player: {self.username}")
+                    right_panel.refresh()
+                    
+                
+                screen.refresh()
+                right_panel.refresh()
+                text_window.refresh()
             except (ConnectionResetError, struct.error) as e:
-                self.print_pane(bottom_right_pane, e)
+                print(str(e))
                 break
 
-    def print_pane(self, pane, text):
-        pane.clear()
-        pane.border()
-        pane.addstr(1, 1, text)
-        pane.refresh()
-
-    def handle_input(self, stdscr, client):
+    def handle_input(self):
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
         try:
@@ -83,13 +118,14 @@ class Client:
             while True:
                 command = sys.stdin.read(1)
                 action = self.button_handler.handle_button_press(command)
+                if command == 'q':
+                    packet = self.create_packet('move', {'move': action})
+                    self.client.sendall(packet)
+                    self.close()
+                    break
                 if action is not None:
                     packet = self.create_packet('move', {'move': action})
-                    # print(packet)
-                    client.sendall(packet)
-                if action == 'quit':
-                    self.close()
-
+                    self.client.sendall(packet)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
@@ -98,29 +134,31 @@ class Client:
         self.password = input("Enter your password: ")
         packet = self.create_packet('login', {'username': self.username, 'password': self.password})
         self.client.send(packet)
-        rec = self.client.recv(1024)
-        response = self.unpack_packet(rec)
-        if response['type'] == 'success':
-            # print(response['data']['data'])
-            self.renderer = GridWorldRenderer()
-        elif response['type'] == 'fail':
-            print(response['data']['data'])
-            self.close()
-            
-
 
     def main(self):
         self.login()
-        receive_thread = threading.Thread(target=curses.wrapper, args=(self.receive_data, self.client))
+        curses.wrapper(self.curses_main)
+
+    def curses_main(self, stdscr):
+        curses.curs_set(0)
+        height, width = stdscr.getmaxyx()
+        screen_width = width // 2
+        text_height = height // 2
+
+        screen = curses.newwin(height, screen_width, 0, 0)
+        right_panel = curses.newwin(text_height, screen_width, 0, screen_width)
+        text_window = curses.newwin(text_height, screen_width, text_height, screen_width)
+        
+
+
+        receive_thread = threading.Thread(target=self.receive_data, args=(screen, text_window, right_panel))
         receive_thread.start()
 
-        self.handle_input(None, self.client)
+        self.handle_input()
 
     def close(self):
         self.client.close()
         sys.exit()
-
-
 
 class ButtonHandler:
     def __init__(self):
@@ -130,6 +168,8 @@ class ButtonHandler:
         self.right = 'd'
         self.print = 'p'
         self.quit = 'q'
+        self.attack = 'f'
+        self.inventory = 'e'
 
     def handle_button_press(self, command):
         if command == self.quit:
@@ -144,6 +184,10 @@ class ButtonHandler:
             action = 'right'
         elif command == self.print:
             action = 'print'
+        elif command == self.attack:
+            action = 'interact'
+        elif command == self.inventory:
+            action = 'inventory'
         else:
             action = None
         return action

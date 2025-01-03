@@ -1,9 +1,28 @@
+
+
+# ID Scheme
+    # 0: 'empty',
+    # 1 - 999: 'debug',
+    # 1,000 - 999,999: 'game_objects'
+    # 1,000,000 - 1,999,999: 'players'
+
+
+
+
+
+
+
+
+
+# entities = {
+
+
 object_ids = {
     "empty": 0,
     "tree": 1,
     "rock": 2,
     "player": 3,
-    'PlaceHolder4': 4,
+    'wall': 4,
     'PlaceHolder5': 5,
     'PlaceHolder6': 6,
     'PlaceHolder7': 7,
@@ -261,7 +280,7 @@ ids_object = {
     1: 'tree',
     2: 'rock',
     3: 'player',
-    4: 'PlaceHolder4',
+    4: 'wall',
     5: 'PlaceHolder5',
     6: 'PlaceHolder6',
     7: 'PlaceHolder7',

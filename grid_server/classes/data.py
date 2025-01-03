@@ -5,7 +5,8 @@ obj_ids = {
 0: "empty",
 1: "tree",
 2: "rock",
-3: "player"
+3: "player",
+4: "wall"
 
 }
 
