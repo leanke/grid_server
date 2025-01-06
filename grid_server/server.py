@@ -146,15 +146,30 @@ class GameServer:
         """
         Send the current game state to the client.
         """
+        array = self.grid_world.grid.client_view(player)
+        pack = {
+            'player': {
+                'id': 3,
+                'pid': player.pid,
+                'name': player.name,
+                'type': player.type,
+                'coords': {'x': player.x, 'y': player.y},
+                'local_coords': {'x': player.local_x, 'y': player.local_y},
+                'direction': player.direction,
+                'skills': player.skills,
+                'xp': player.xp,
+                'max_health': player.max_health,
+                'health': player.current_health,
+                'inventory': player.inventory,
+                'combat_level': player.combat_level
+            },
+            'array': array,
+            'text': None,
+        }
         if data is not None:
-            menu = player.player_data()
-            menu['tile'] = self.grid_world.tile_info(player)
-            data['menu'] = menu
-            data['screen'] = data['screen'].tolist()
-            packet = self.create_packet('game_state', data)
-        else:
-            screen = self.grid_world.grid.client_view(player.x, player.y).tolist()
-            packet = self.create_packet('game_state', {'screen': screen, 'text': None, 'menu': None})
+            pack['text'] = data
+
+        packet = self.create_packet('game_state', pack)
         try:
             client_socket.sendall(packet)
         except socket.error as e:
@@ -207,6 +222,9 @@ if __name__ == "__main__":
         server.start()
     except KeyboardInterrupt:
         server.stop()
+
+
+
 
 
 

@@ -13,6 +13,10 @@
         "direction": "left",
         "total_time": 0
     },
+    "client": {
+        "x": 14,
+        "y": 14
+    },
     "skills": {
         "attack": 1,
         "defence": 1,
