@@ -1,15 +1,14 @@
+import random
 import numpy as np
 import pickle
 import base64
-from grid_server.classes.data import objects_debug, object_ids, item_ids, walls
-from grid_server.classes.objects import GameObject
+from grid_server.classes.data import objects_debug, walls
 from grid_server.classes.tile import Tile
+from grid_server.classes.noise_generator import NoiseGenerator
 
 class GameArray:
     def __init__(self, game_state=None):
-        self.ids_object = object_ids
         self.object_list = objects_debug
-        self.object_ids = {value: key for key, value in object_ids.items()}
         if game_state is not None:
             self.world = self.load_from_file(game_state)
         else:
@@ -18,41 +17,32 @@ class GameArray:
         self.shape = self.world.shape
 
     def load_world(self) -> None:
+        noise_gen = NoiseGenerator(self.world.shape)
+        noise_array = noise_gen.generate_noise()
+
         for row in range(self.world.shape[0]):
             for cell in range(self.world.shape[1]):
                 self.world[row][cell] = Tile()
-        wall_tile = Tile(object=walls[1])
-        self.world[0, :] = wall_tile
-        self.world[-1, :] = wall_tile
-        self.world[:, 0] = wall_tile
-        self.world[:, -1] = wall_tile
+        for i in range(self.world.shape[0]):
+            self.world[0, i].set('object', self.get_random_wall())
+            self.world[-1, i].set('object', self.get_random_wall())
+            self.world[i, 0].set('object', self.get_random_wall())
+            self.world[i, -1].set('object', self.get_random_wall())
         for obj in self.object_list:
-            self.place_object(obj['coords'][0], obj['coords'][1], obj['data'])
+            tile = self.get_tile(obj['coords'][0], obj['coords'][1])
+            tile.set('object', obj['data'])
+        self.world = noise_gen.generate_tiles(self.world, noise_array)
 
-    def check_tile(self, x, y) -> Tile:
+
+    def get_tile(self, x, y) -> Tile:
         return self.world[x][y]
 
-    def place_object(self, x, y, obj) -> None:
-        tile = self.check_tile(x, y)
-        tile.set_object(obj)
-
-    def place_entity(self, x, y, entity) -> None:
-        tile = self.check_tile(x, y)
-        tile.set_entity(entity)
-
-    def place_item(self, x, y, item) -> None:
-        tile = self.check_tile(x, y)
-        tile.set_item(item)
-
-    def client_view(self, player) -> str:
+    def client_view(self, entity) -> str:
         view_size = 28
-        start_x = player.x - view_size // 2
-        start_y = player.y - view_size // 2
+        start_x = entity.x - view_size // 2
+        start_y = entity.y - view_size // 2
         end_x = start_x + view_size
         end_y = start_y + view_size
-        if view_size != 28:
-            player.local_x = view_size // 2
-            player.local_y = view_size // 2
 
         view_data = np.full((view_size, view_size), Tile(), dtype=object)
 
@@ -62,7 +52,7 @@ class GameArray:
 
         # Serialize the view_data array using pickle and encode it to a base64 string
         serialized_view = base64.b64encode(pickle.dumps(view_data)).decode('utf-8')
-        return serialized_view
+        return serialized_view, view_data
 
     def save_to_file(self, filename) -> None:
         with open(filename, 'wb') as file:
@@ -72,21 +62,13 @@ class GameArray:
         with open(filename, 'rb') as f:
             world = np.load(f, allow_pickle=True)
         return world
-    
-    def move(self, x, y, player) -> None:
+
+    def remove(self, x, y, component_type) -> None:
         if 0 <= x < self.shape[0] and 0 <= y < self.shape[1]:
-            tile = self.check_tile(x, y)
-            if tile.object is None and tile.entity is None:
-                self.remove(player.x, player.y)
-                player.x = x
-                player.y = y
-                attr = player.player_data()
-                self.place_entity(x, y, attr)
+            tile = self.get_tile(x, y)
+            tile.remove(component_type)
         else:
             raise ValueError("Coordinates out of bounds")
-    
-    def remove(self, x, y):
-        if 0 <= x < self.shape[0] and 0 <= y < self.shape[1]:
-            self.world[x][y].clear()
-        else:
-            raise ValueError("Coordinates out of bounds")
+        
+    def get_random_wall(self):
+        return walls[random.randint(1, 8)]

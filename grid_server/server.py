@@ -3,9 +3,11 @@ import os
 import threading
 import json
 import time
+import uuid
 
 from grid_server.classes.environment import GridWorld
-from grid_server.classes.player import Player
+from grid_server.classes.entities.player import Player
+from grid_server.classes.data import new_player
 
 
 class GameServer:
@@ -19,6 +21,8 @@ class GameServer:
         print(f"Server started on {config['host']}:{config['port']}")
         self.clients = []
         self.client_player = {}
+
+        
         self.path = f"./grid_server/worlds/{config['world_name']}"
         self.config = config
         if not os.path.exists(self.path):
@@ -41,23 +45,22 @@ class GameServer:
         os.makedirs(logpath)
     
     def create_packet(self, type, data):
-        """
-        Create a packet to send to the client.
-        """
-        packet_format = {
-            'type': type,
-            'data': data
+        packet = {
+            'type': type if type is not None else 'none',
+            'data': data if data is not None else {}
         }
-        packet = json.dumps(packet_format).encode('utf-8')
+        packet = json.dumps(packet).encode('utf-8')
         length = len(packet).to_bytes(4, byteorder='big')
         return length + packet
 
-    def unpack_packet(self, packet):
-        """
-        Unpack a received packet from the client.
-        """
-        length = int.from_bytes(packet[:4], byteorder='big')
-        data = json.loads(packet[4:length+4].decode('utf-8'))
+    def unpack_packet(self, header, client_socket):
+        data_length = int.from_bytes(header, byteorder='big')
+        data = b''
+        while len(data) < data_length:
+            packet = client_socket.recv(data_length - len(data))
+            if not packet:
+                break
+            data += packet
         return data
 
     def handle_client(self, client_socket):
@@ -65,30 +68,44 @@ class GameServer:
         Handle communication with a connected client.
         """
         try:
-            data = client_socket.recv(1024)
-            if not data:
+            header = client_socket.recv(4)
+            if not header:
                 return
-            req = self.unpack_packet(data)
+            data = self.unpack_packet(header, client_socket)
+            req = json.loads(data.decode('utf-8'))
+
+
+
+            # data = client_socket.recv(1024)
+            if not req:
+                return
+            # req = self.unpack_packet(data)
             username = req['data']['username']
             password = req['data']['password']
             player = self.get_or_create_player(username, password)
+            # print(player)
 
             if req['type'] == 'login':
                 self.send_game_state(client_socket, player, None)
                 self.clients.append(client_socket)
                 self.client_player[client_socket] = player
             while self.running:
-                command = client_socket.recv(1024)
-                if not command:
-                    break
-                unpacked_data = self.unpack_packet(command)
+
+                header = client_socket.recv(4)
+                if not header:
+                    return
+                data = self.unpack_packet(header, client_socket)
+                unpacked_data = json.loads(data.decode('utf-8'))
+
                 ret = {}
 
                 if unpacked_data['data']['move'] == 'quit':
                     self.handle_quit(client_socket, player)
                     break
                 elif unpacked_data['data']['move']:
-                    ret = self.grid_world.step(player, unpacked_data['data']['move'])
+                    if player is not None:
+                        print(f"Player {player.name} moved {unpacked_data['data']['move']}")
+                        ret = self.grid_world.step(player, unpacked_data['data']['move'])
                 
                 self.send_game_state(client_socket, player, ret)
         except ConnectionResetError:
@@ -103,7 +120,7 @@ class GameServer:
         Handle player quitting the game.
         """
         player.save()
-        self.grid_world.grid.remove(player.x, player.y)
+        self.grid_world.grid.remove(player.x, player.y, 'entity')
         print(f"Player {player.name} disconnected")
         self.player_list.remove(player)
         if client_socket in self.clients:
@@ -114,6 +131,7 @@ class GameServer:
         Get an existing player or create a new one.
         """
         path = f'{self.path}/users/{username}'
+        print(username, password)
         if not os.path.exists(f'{path}.json'):
             player = self.create_player(username, password, path)
         else:
@@ -130,52 +148,41 @@ class GameServer:
         Create a new player.
         """
         os.system(f"touch {path}.json")
-        os.system(f"cp ./grid_server/default.json {path}.json")
-        _, _, files = next(os.walk(f'{self.path}/users/'))
-        file_count = len(files)
+        with open(f'{path}.json', 'w') as f:
+            json.dump(self.create_base_player(username, password), f, indent=4)
         with open(f'{path}.json') as f:
             config = json.load(f)
             player = Player(config, path)
-        player.name = username
-        player.password = password
-        player.pid = 1_000_000 + file_count
         player.save()
         return player
+    
+    def create_base_player(self, username, password):
+        new_player["base"]["pid"] = f'{str(uuid.uuid4())[:8]}'
+        new_player["base"]["name"] = f'{str(username)}'
+        new_player["base"]["password"] = f'{str(password)}'
+        return new_player
 
     def send_game_state(self, client_socket, player, data):
         """
         Send the current game state to the client.
         """
-        array = self.grid_world.grid.client_view(player)
-        pack = {
-            'player': {
-                'id': 3,
-                'pid': player.pid,
-                'name': player.name,
-                'type': player.type,
-                'coords': {'x': player.x, 'y': player.y},
-                'local_coords': {'x': player.local_x, 'y': player.local_y},
-                'direction': player.direction,
-                'skills': player.skills,
-                'xp': player.xp,
-                'max_health': player.max_health,
-                'health': player.current_health,
-                'inventory': player.inventory,
-                'combat_level': player.combat_level
-            },
-            'array': array,
-            'text': None,
-        }
-        if data is not None:
-            pack['text'] = data
+        if player is not None:
+            array, _ = self.grid_world.grid.client_view(player)
+            pack = {
+                'player': player.client_data(),
+                'client_view': array,
+                'text': None,
+            }
+            if data is not None:
+                pack['text'] = data
 
-        packet = self.create_packet('game_state', pack)
-        try:
-            client_socket.sendall(packet)
-        except socket.error as e:
-            print(f"Error sending data: {e}")
-            self.clients.remove(client_socket)
-            client_socket.close()
+            packet = self.create_packet('game_state', pack)
+            try:
+                client_socket.sendall(packet)
+            except socket.error as e:
+                print(f"Error sending data: {e}")
+                self.clients.remove(client_socket)
+                client_socket.close()
 
     def broadcast_game_state(self):
         """
@@ -194,7 +201,7 @@ class GameServer:
             tick += 1
             self.grid_world.step(None, None)
             self.broadcast_game_state()
-            time.sleep(0.5)
+            time.sleep(0.1)
 
     def start(self):
         """
@@ -217,11 +224,7 @@ class GameServer:
         self.server.close()
 
 if __name__ == "__main__":
-    server = GameServer()
-    try:
-        server.start()
-    except KeyboardInterrupt:
-        server.stop()
+    pass
 
 
 

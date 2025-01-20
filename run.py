@@ -2,6 +2,7 @@ import argparse
 import configparser
 import grid_server.server as server
 import grid_client.client as client
+import curses
 
 def load_config(config_file='config.ini'):
     config = configparser.ConfigParser()
@@ -35,7 +36,7 @@ def main():
         if args.host:
             config['client']['host'] = args.host
         client_instance = client.Client(config['client'])
-        client_instance.main()
+        curses.wrapper(client_instance.main)
 
 if __name__ == "__main__":
     main()

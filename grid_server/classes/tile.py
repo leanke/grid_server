@@ -1,49 +1,71 @@
 class Tile:
-    def __init__(self, object=None, entity=None, item=None):
+    def __init__(self, object=None, entity=None, items=None):
         self.object = object
         self.entity = entity
-        self.item = item
-        self.id = self.get_id()
-
+        self.items = items if items is not None else []
+        self.id = None
+        
     def get_id(self):
         if self.object is not None:
-            return self.object['id']
+            return 'object'
         elif self.entity is not None:
-            return self.entity['id']
-        elif self.item is not None:
-            return self.item['id']
+            return 'entity'
+        elif self.items != [] and self.items is not None:
+            return 'item'
         else:
-            return 0
+            return None
 
-    def set_object(self, obj):
-        if self.object is None and self.entity is None:
-            self.object = obj
-            self.id = obj['id']
+    def set(self, component_type, component):
+        if component_type == 'object':
+            if self.object is None:
+                self.object = component
+                self.id = component_type
+        elif component_type == 'entity':
+            if self.entity is None:
+                self.entity = component
+                if self.object is None:
+                    self.id = component_type
+                else:
+                    self.id = 'object'       
+        elif component_type == 'item':
+            self.items.append(component)
+            if self.object is None:
+                if self.entity is None:
+                    self.id = component_type
+                else:
+                    self.id = 'entity'
+            else:
+                self.id = 'object'
+    
+    def remove(self, component_type, component=None):
+        if component_type == 'object':
+            self.object = None
+        elif component_type == 'entity':
+            self.entity = None
+        elif component_type == 'item':
+            if component:
+                self.items.remove(component)
+            else:
+                self.items.clear()
         else:
-            raise ValueError("Tile already occupied by an object or entity")
+            raise ValueError("Invalid component type")
+        self.id = self.get_id()
 
-    def set_entity(self, entity):
-        if self.object is None and self.entity is None:
-            self.entity = entity
-            self.id = entity['id']
-        elif self.object is None:
-            self.entity = entity
-            self.id = entity['id']
+    def get(self, component_type):
+        if component_type == 'object':
+            return self.object
+        elif component_type == 'entity':
+            return self.entity
+        elif component_type == 'item':
+            return self.items
         else:
-            raise ValueError("Tile already occupied by an object")
-
-    def set_item(self, item):
-        if self.object is None and self.item is None:
-            self.item = item
-            self.id = item['id']
-        elif self.object is None:
-            self.item = item
-            self.id = item['id']
-        else:
-            raise ValueError("Tile already occupied by an object")
+            raise ValueError("Invalid component type")
 
     def clear(self):
         self.object = None
         self.entity = None
-        self.item = None
+        self.items = []
         self.id = 0
+
+
+
