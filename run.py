@@ -1,6 +1,6 @@
 import argparse
 import configparser
-import grid_server.server as server
+import grid_server.new_server as server
 import grid_client.client as client
 import curses
 

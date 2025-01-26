@@ -80,9 +80,27 @@ objects_debug = [
 
     {'coords': (12,15), 'data': rocks[8]},
     {'coords': (12,16), 'data': rocks[8]},
+    # {'coords': (13,15), 'data': bank_chest},
 ]
 
+items_debug = [
+    {'coords': (10,1), 'data': items['melee_items']['right_hand']['sword']},
+    {'coords': (11,1), 'data': items['melee_items']['body']['chestplate']},
 
+    {'coords': (7,1), 'data': items['magic_items']['right_hand']['staff']},
+    {'coords': (8,1), 'data': items['magic_items']['body']['robe']},
+    {'coords': (6,3), 'data': items['magic_items']['right_hand']['magic']},
+
+
+    {'coords': (4,1), 'data': items['range_items']['right_hand']['short_bow']},
+    {'coords': (5,1), 'data': items['range_items']['body']['leather']},
+]
+
+entity_debug = [
+    {'coords': (1,5), 'data': Mage((1,5))},
+    {'coords': (1,7), 'data': Warrior((1,7))},
+    {'coords': (1,9), 'data': Archer((1,9))},
+]
 
 new_player = {
     "base": {
@@ -94,8 +112,8 @@ new_player = {
         "type": "None"
     },
     "stats": {
-        "x": 2,
-        "y": 2,
+        "x": 5,
+        "y": 5,
         "direction": "down",
         "total_time": 0
     },

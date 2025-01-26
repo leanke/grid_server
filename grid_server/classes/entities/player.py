@@ -23,32 +23,15 @@ class Player(Entity):
             self.skills.skills[skill] = data
         self.inventory = Inventory()
         for item in player['inventory']['slots']:#['slots']:
-            self.inventory.add(item)
-        for item in player['inventory']['equipped']:
-            self.inventory.equip(item)
-
+            if item != {}:
+                self.inventory.add(item)
+        for slot, item in player['inventory']['equipped'].items():
+            self.inventory.equip(item, slot)
+        self.menu_drop = False
 
     def client_data(self):
-        data = {
-        'rank': self.rank,
-        'title': self.title,
-        'type': self.type,
-        'x': self.x,
-        'y': self.y,
-        'local_x': self.local_x,
-        'local_y': self.local_y,
-        'direction': self.direction,
-        'skills': self.skills.to_dict(),
-        'inventory': self.inventory.to_dict(),
-        'id': self.id,
-        'name': self.name,
-        'pid': self.pid,
-        'home': self.home,
-        'direction': self.direction,
-        'max_health': self.max_health,
-        'health': self.health,
-        'combat_level': self.skills.combat_level(),
-        }
+        data = super().client_data()
+        data['menu_drop'] = self.menu_drop
         return data
     
     def save(self):
@@ -63,19 +46,17 @@ class Player(Entity):
         with open(self.path, 'w') as f:
             json.dump(save_data, f, indent=4)
 
-    def info(self):
-        string = (
-            f"Info: {self.name}\n" +
-            f"    Attack: {self.skills.skills['attack']}, Defence: {self.skills.skills['defence']}, Health: {self.skills.skills['health']}\n" +
-            f"    Woodcutting: {self.skills.skills['woodcutting']}, Mining: {self.skills.skills['mining']}, Firemaking: {self.skills.skills['firemaking']}\n"
-        )
-        return string
-
     def add_xp(self, skill, amount):
         self.skills.add_xp(skill, amount)
 
     def check_level_up(self, skill):
         self.skills.check_level_up(skill)
+
+    def menu(self, action):
+        if self.menu_drop:
+            return self.drop(action)
+        
+
 
 
 

@@ -2,13 +2,16 @@ import random
 import numpy as np
 import pickle
 import base64
-from grid_server.classes.data import objects_debug, walls
+from grid_server.classes.data import walls, objects_debug, items_debug, entity_debug
 from grid_server.classes.tile import Tile
 from grid_server.classes.noise_generator import NoiseGenerator
 
 class GameArray:
     def __init__(self, game_state=None):
         self.object_list = objects_debug
+        self.item_list = items_debug
+        self.entity_list = entity_debug
+        self.bank_list = []
         if game_state is not None:
             self.world = self.load_from_file(game_state)
         else:
@@ -31,8 +34,15 @@ class GameArray:
         for obj in self.object_list:
             tile = self.get_tile(obj['coords'][0], obj['coords'][1])
             tile.set('object', obj['data'])
+        for item in self.item_list:
+            tile = self.get_tile(item['coords'][0], item['coords'][1])
+            tile.set('item', item['data'])
+        for entity in self.entity_list:
+            tile = self.get_tile(entity['coords'][0], entity['coords'][1])
+            tile.set('entity', entity['data'])
+            # if entity['data']['type'] == 'bank':
+            #     self.bank_list.append(entity['data'])
         self.world = noise_gen.generate_tiles(self.world, noise_array)
-
 
     def get_tile(self, x, y) -> Tile:
         return self.world[x][y]
@@ -50,7 +60,6 @@ class GameArray:
             for j in range(max(0, start_y), min(self.world.shape[1], end_y)):
                 view_data[i - start_x, j - start_y] = self.world[i, j]
 
-        # Serialize the view_data array using pickle and encode it to a base64 string
         serialized_view = base64.b64encode(pickle.dumps(view_data)).decode('utf-8')
         return serialized_view, view_data
 
@@ -72,3 +81,9 @@ class GameArray:
         
     def get_random_wall(self):
         return walls[random.randint(1, 8)]
+
+    def create_bank(self, coords):
+        bank = {'coords': coords, 'data': Bank().to_dict()}
+        self.bank_list.append(bank)
+        tile = self.get_tile(coords[0], coords[1])
+        tile.set('object', bank['data'])

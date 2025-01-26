@@ -1,4 +1,5 @@
 import json
+import os
 import random
 import socket
 import struct
@@ -10,9 +11,18 @@ import pickle
 import base64
 import grid_client.client_data as data
 
+def calc_lines(panel, text):
+    y, x = panel.getmaxyx()
+    if len(text) > x - 2:
+        text = text[:x - 2]
+    return text + ' ' * (x - 2 - len(text))
 
-
-
+def clear_panel(panel):
+    y, x = panel.getmaxyx()
+    text = ' '
+    text = calc_lines(panel, text)
+    for i in range(y):
+        panel.addstr(i, 1, text)
 
 class Renderer:
     def __init__(self):
@@ -32,8 +42,6 @@ class Renderer:
         stdscr.keypad(1)
         self.stdscr = stdscr
 
-        
-        
         height, width = stdscr.getmaxyx()
         screen_width = width // 2
         qwidth = width // 4
@@ -44,14 +52,56 @@ class Renderer:
         self.menu_left_panel = curses.newwin(text_height, qwidth, 0, screen_width)
         self.text_panel = curses.newwin(text_height, screen_width, text_height, screen_width)
 
+    def print_tile_object(self, panel, line, tile):
+        if tile.object is not None:
+            object = tile.object
+            text = calc_lines(panel, f"{object['name']}:")
+            panel.addstr(line, 1, text)
+
+            return text
+        return ''
+
+    def add_text(self, panel, line, text, width, color=21):
+        panel.addstr(line, 1, text + (' ' * (width - 2 - len(text))), curses.color_pair(color))
+
+    def add_object_info(self, panel, line, object, width):
+        if object['name'] == 'Wall':
+            return line
+        else:
+            self.add_text(panel, line, f"{object['name']}:", width)
+            line += 1
+            self.add_text(panel, line, f"  Tier: {object['tier']}", width)
+            return line + 1
+
+    def add_entity_info(self, panel, line, entity, player, width):
+        if entity.pid != player['pid']:
+            self.add_text(panel, line, f"{entity.name}:", width)
+            line += 1
+            self.add_text(panel, line, f"  Combat Level: {entity.combat_level}", width)
+            line += 1
+            self.add_text(panel, line, f"  Health: {entity.health}", width)
+            return line + 1
+        return line
+
+    def add_dropped_items(self, panel, line, items, width):
+        if items:
+            self.add_text(panel, line, "Dropped Items:", width)
+            line += 1
+            for item in items:
+                if item[1]:
+                    self.add_text(panel, line, f"  {item[0]}", width, 81)
+                else:
+                    self.add_text(panel, line, f"  {item[0]}", width)
+                line += 1
+        return line
+
     def tile_pan(self):
         line = 1
         tiles_coords = self.get_area_of_tiles(1)
         dropped_items = []
         my, mx = self.text_panel.getmaxyx()
         for i in range(my - 2):
-            self.menu_right_panel.addstr(i+1, 1, ' ' * (mx - 2))
-        self.menu_right_panel.box()
+            self.menu_right_panel.addstr(i + 1, 1, ' ' * (mx - 2))
         if not self.flag:
             for coords in tiles_coords:
                 x, y = coords
@@ -59,37 +109,26 @@ class Renderer:
                 if line > my - 2:
                     break
                 if tile.object is not None:
-                    object = tile.object
-                    self.menu_right_panel.addstr(line, 1, f"{object['name']}:" + (' ' * (x - 2 - len(f"{object['name']}:"))))
-                    line += 1
-                    self.menu_right_panel.addstr(line, 1, f"  Tier: {object['tier']}" + (' ' * (x - 2 - len(f"  Tier: {object['tier']}"))))
-                    line += 1
+                    line = self.add_object_info(self.menu_right_panel, line, tile.object, mx)
                 if tile.entity is not None:
-                    entity = tile.entity
-                    if tile.entity.pid != self.player['pid']:
-                        self.menu_right_panel.addstr(line, 1, f"{entity.name}:" + (' ' * (x - 2 - len(f"{entity.name}:"))))
-                        line += 1
-                        self.menu_right_panel.addstr(line, 1, f"  Combat Level: {entity.combat_level}" + (' ' * (x - 2 - len(f"  Combat Level: {entity.combat_level}"))))
-                        line += 1
-                        self.menu_right_panel.addstr(line, 1, f"  Health: {entity.health}" + (' ' * (x - 2 - len(f"  Health: {entity.health}"))))
-                        line += 1
-                if tile.items is not None and tile.items != []:
-                    item = tile.items
-                    for i in item:
-                        dropped_items.append(i['name'])
-            if dropped_items != []:
-                self.menu_right_panel.addstr(line, 1, f"Dropped Items:" + (' ' * (x - 2 - len(f"Dropped items:"))))
-                line += 1
-                for i in dropped_items:
-                    self.menu_right_panel.addstr(line, 1, f"  {i}" + (' ' * (x - 2 - len(f"{i}"))))
-                    line += 1
+                    line = self.add_entity_info(self.menu_right_panel, line, tile.entity, self.player, mx)
+                if tile.items:
+                    if x == self.player['local_x'] and y == self.player['local_y']:
+                        dropped_items.extend((item['name'], True) for item in tile.items)
+                    else:
+                        dropped_items.extend((item['name'], False) for item in tile.items)
+            line = self.add_dropped_items(self.menu_right_panel, line, dropped_items, mx)
         else:
-            self.menu_right_panel.addstr(1, 1, f"Equipped:" + (' ' * (x - 2 - len(f"Equipped:"))))
-            for i, (k, v) in enumerate(self.player['inventory']['equipped'].items()):
-                if i > my - 2:
+            self.add_text(self.menu_right_panel, 1, "Equipped:", mx)
+            line_count = 0
+            for k, v in self.player['inventory']['equipped'].items():
+                if line_count > my - 2:
                     break
-                self.menu_right_panel.addstr(i, 1, f"{k}: {v['name']}" + (' ' * (x - 2 - len(f"{k}: {v['name']}"))))
-            self.menu_right_panel.refresh()
+                if v != {}:
+                    line_count += 1
+                    self.add_text(self.menu_right_panel, line_count, f"{k}: {v['name']}", mx) # ['name']
+        self.menu_right_panel.box()
+        self.menu_right_panel.refresh()
 
     def update(self, grid, player, text):
         self.player = player
@@ -98,7 +137,7 @@ class Renderer:
         if self.welcome_text:
             self.text_pan("Welcome to the game!")
             self.welcome_text = False
-        if text is not None and len(text) >= 5: #is not None:
+        if text is not None and len(text) >= 3: #is not None:
             self.text_pan(text)
         if self.player is not None and self.grid_world is not None:
             self.player_pan()
@@ -154,19 +193,19 @@ class Renderer:
                         return fg + bg
                     elif object['tier'] == 5:
                         fg = data.FG['green']
-                        bg = data.BG['cyan']
+                        bg = data.BG['magenta']
                         return fg + bg
                     elif object['tier'] == 6:
                         fg = data.FG['yellow']
-                        bg = data.BG['cyan']
+                        bg = data.BG['magenta']
                         return fg + bg
                     elif object['tier'] == 7:
                         fg = data.FG['red']
-                        bg = data.BG['cyan']
+                        bg = data.BG['magenta']
                         return fg + bg
                     elif object['tier'] == 8:
-                        fg = data.FG['magenta']
-                        bg = data.BG['cyan']
+                        fg = data.FG['cyan']
+                        bg = data.BG['magenta']
                         return fg + bg
                     else:
                         fg = data.FG['white']
@@ -183,7 +222,7 @@ class Renderer:
                         fg = data.FG['green']
 
             if tile.items != [] and tile.items is not None:
-                bg = data.BG['magenta']
+                bg = data.BG['cyan']
                 if tile.object is None and tile.entity is None:
                         fg = data.FG['black']
 
@@ -242,16 +281,32 @@ class Renderer:
 
     def player_pan(self):
         y, x = self.menu_left_panel.getmaxyx()
-        if not self.flag:
-            self.menu_left_panel.addstr(1, 1, f"Player: {self.player['name']}")
-            self.menu_left_panel.addstr(2, 1, f"Health: {self.player['health']}/{self.player['max_health']}            ")
-            self.menu_left_panel.addstr(3, 1, f"Combat Level: {self.player['combat_level']}      ")
-        else:
-            self.menu_left_panel.addstr(1, 1, f"Inventory:"                  )
-            for i, item in enumerate(self.player['inventory']['slots']):
-                self.menu_left_panel.addstr(i+2, 1, f"{item['name']}: {item['quantity']}" + (' ' * (x - 2 - len(f"{item['name']}: {item['quantity']}"))))
-        self.menu_left_panel.refresh()
+        # if not self.flag:
+        text = calc_lines(self.menu_left_panel, f"Player: {self.player['name']}")
+        self.menu_left_panel.addstr(1, 1, text)
+        text = calc_lines(self.menu_left_panel, f"Health: {self.player['health']}/{self.player['max_health']}")
+        self.menu_left_panel.addstr(2, 1, text)
+        text = calc_lines(self.menu_left_panel, f"Combat Level: {self.player['combat_level']}")
+        self.menu_left_panel.addstr(3, 1, text)
+        text = calc_lines(self.menu_left_panel, f"Inventory:")
+        self.menu_left_panel.addstr(4, 1, text)
+        for i, item in enumerate(self.player['inventory']['slots']):
+            if item != {}:
+                if item['quantity'] > 1:
+                    text = calc_lines(self.menu_left_panel, f" {i+1}: {item['name']}: {item['quantity']}")
+                else:
+                    text = calc_lines(self.menu_left_panel, f" {i+1}: {item['name']}")
+            else:
+                text = calc_lines(self.menu_left_panel, f" {i+1}: Empty Slot")
+            if self.player is not None:
+                if self.player['menu_drop']:
+                    self.menu_left_panel.addstr(i+5, 1, text, curses.color_pair(51))
+                else:
+                    self.menu_left_panel.addstr(i+5, 1, text)
+            else:
+                self.menu_left_panel.addstr(i+5, 1, text)
 
+        self.menu_left_panel.refresh()
 
     def text_pan(self, text):
         y, x = self.text_panel.getmaxyx()
@@ -260,13 +315,13 @@ class Renderer:
         if len(self.text_queue) > y - 2:
             self.text_queue.pop(0)
         # self.text_panel.clear()
-        self.text_panel.box()
+
         for i, line in enumerate(self.text_queue):
             if len(line) > x - 2:
                 line = line[:x - 2]
             self.text_panel.addstr(i+1, 1, line + ' ' * (x - 2 - len(line)))
+        self.text_panel.box()
         self.text_panel.refresh()
-
 
     def close(self):
         curses.endwin()
@@ -278,10 +333,13 @@ class Client:
         self.client.connect((config["host"], int(config["port"])))
         self.render = Renderer()
         self.button_handler = ButtonHandler()
+        self.button_handler.save_keybinds()
+        self.button_handler.load_keybinds(config['keybinds'])
         self.response = None
         self.login_array = None
         self.username = None
         self.password = None
+        self.enter_game = False
    
     def create_packet(self, type, data):
         packet = {
@@ -376,8 +434,7 @@ class Client:
         receive_thread.start()
         self.handle_input(stdscr)
 
-    def login_animation(self, stdscr, screen_hight, screen_width, ch, cw, center):
-
+    def login_animation(self, stdscr, screen_hight, screen_width, ch, cw):
         for x in range(self.login_array.shape[0]):
             for y in range(self.login_array.shape[1]):
                 if screen_hight <= x < screen_hight + ch and screen_width <= y < screen_width + cw:
@@ -386,37 +443,139 @@ class Client:
                 color = self.login_array[x, y]
                 stdscr.addch(x, y, f' ', curses.color_pair(int(color)))
         stdscr.refresh()
+
+    def menu(self, center):
+        ch, cw = center.getmaxyx()
+        for i in range(ch):
+            text = calc_lines(center, ' ')
+            center.addstr(i, 1, text)
+        menu_list = ['Enter Game', 'Change Keybinds', 'Change Password', 'Exit']
         center.box()
-        center.addstr(1, (cw-6)//2, f'Log in')
-        center.addstr(4, 1, 'Username: ')
-        center.addstr(6, 1, 'Password: ')
+        text = calc_lines(center, f'Options')
+        center.addstr(1, (cw-6)//2, text)
+        for i, option in enumerate(menu_list):
+            text = calc_lines(center, f"{i+1}. {option}")
+            center.addstr(i+3, 1, text)
         center.refresh()
+        command = center.getch()
+        if command == ord('1'):
+            pass
+        elif command == ord('2'):
+            self.change_keybinds(center)
+        elif command == ord('3'):
+            self.change_password(center)
+        elif command == ord('4'):
+            self.close(center)
+
+    def change_keybinds(self, center):
+        ch, cw = center.getmaxyx()
+        bindings_list = ['Up', 'Down', 'Left', 'Right', 'Interact', 'Attack']
+        center.box()
+        center.addstr(1, (cw-6)//2, f'Keybinds')
+        for i, bind in enumerate(bindings_list):
+            text = calc_lines(center, f"{i+1}. {bind}")
+            center.addstr(i+3, 1, text)
+        center.refresh()
+        command = center.getch()
+        if command == ord('1'):
+            new_key = center.getch()
+            self.button_handler.change_keybinds('up', chr(new_key))
+        elif command == ord('2'):
+            new_key = center.getch()
+            self.button_handler.change_keybinds('down', chr(new_key))
+        elif command == ord('3'):
+            new_key = center.getch()
+            self.button_handler.change_keybinds('left', chr(new_key))
+        elif command == ord('4'):
+            new_key = center.getch()
+            self.button_handler.change_keybinds('right', chr(new_key))
+        elif command == ord('5'):
+            new_key = center.getch()
+            self.button_handler.change_keybinds('interact', chr(new_key))
+        elif command == ord('6'):
+            new_key = center.getch()
+            self.button_handler.change_keybinds('attack', chr(new_key))
+        self.button_handler.save_keybinds()
+        self.menu(center)  # Return to menu after changing keybinds
+
+    def change_password(self, center):
+        clear_panel(center)
+        ch, cw = center.getmaxyx()
+        old_pass_win = curses.newwin(1, 20, (ch // 2) + 3, cw + 15)
+        new_pass_win = curses.newwin(1, 20, (ch // 2) + 4, cw + 15)
+        confirm_pass_win = curses.newwin(1, 20, (ch // 2) + 5, cw + 19)
+
+        old_pass_box = curses.textpad.Textbox(old_pass_win)
+        new_pass_box = curses.textpad.Textbox(new_pass_win)
+        confirm_pass_box = curses.textpad.Textbox(confirm_pass_win)
+        password_list = ['Old Password: ', 'New Password: ', 'Confirm Password: ']
+
+        center.box()
+        center.addstr(1, (cw-6)//2, f'Change Password')
+        for i, password in enumerate(password_list):
+            # center.addstr(i+3, 1, password)
+            text = calc_lines(center, password)
+            center.addstr(i+3, 1, text)
+        center.refresh()
+
+        curses.echo() 
+        curses.nocbreak()
+        old_pass = old_pass_box.edit().rstrip()
+        old_pass_win.refresh()
+        new_pass = new_pass_box.edit().rstrip()
+        new_pass_win.refresh()
+        confirm_pass = confirm_pass_box.edit().rstrip()
+        confirm_pass_win.refresh()
+        curses.cbreak()
+        curses.noecho()
+        # win.addstr(2, 12, "*" * len(username))  # Masking password
+        if new_pass != confirm_pass or old_pass != self.password:
+            print("Passwords do not match")
+            self.close(center)
+        else:   
+            packet = self.create_packet('change_password', {'password': confirm_pass})
+            self.client.sendall(packet)
+        self.menu(center)  # Return to menu after changing password
 
     def login(self, stdscr):
         height, width = stdscr.getmaxyx()
         screen_width = width // 3
-        screen_hight = height // 3
+        screen_hight = height // 2
         if self.login_array is None:
             self.login_array = np.zeros((height-1, width-1))
-        center = curses.newwin(screen_hight, screen_width, screen_hight, screen_width)
+        center = curses.newwin(screen_hight, screen_width, screen_hight // 2, screen_width)
         ch, cw = center.getmaxyx()
-        username_win = curses.newwin(1, cw - 12, screen_hight + 4, screen_width + 11)
-        password_win = curses.newwin(1, cw - 12, screen_hight + 6, screen_width + 11)
+        username_win = curses.newwin(1, cw - 12, screen_hight // 2 + 4, screen_width + 11)
+        password_win = curses.newwin(1, cw - 12, screen_hight // 2 + 6, screen_width + 11)
         username_box = curses.textpad.Textbox(username_win)
         password_box = curses.textpad.Textbox(password_win)
-        self.login_animation(stdscr, screen_hight, screen_width, ch, cw, center)
+        
+        while True:
+            self.login_animation(stdscr, screen_hight // 2, screen_width, ch, cw)
+            center.box()
+            center.addstr(1, (cw-6)//2, f'Log in')
+            center.addstr(4, 1, 'Username: ')
+            center.addstr(6, 1, 'Password: ')
+            center.refresh()
 
-        curses.echo() 
-        curses.nocbreak()
-        self.username = username_box.edit().rstrip()
-        username_win.refresh()
-        self.password = password_box.edit().rstrip()
-        # win.addstr(2, 12, "*" * len(username))  # Masking password
-        password_win.refresh()
-        curses.cbreak()
-        curses.noecho()
-        packet = self.create_packet('login', {'username': self.username, 'password': self.password})
-        self.client.sendall(packet)
+            curses.echo() 
+            curses.nocbreak()
+            self.username = username_box.edit().rstrip()
+            username_win.refresh()
+            self.password = password_box.edit().rstrip()
+            password_win.refresh()
+            curses.cbreak()
+            curses.noecho()
+            packet = self.create_packet('login', {'username': self.username, 'password': self.password})
+            self.client.sendall(packet)
+            
+            response = self.client.recv(1024)
+            if response == b'success':
+                break
+            # else:
+                # self.render.text_pan("Login failed. Try again.")
+
+        self.menu(center)
 
     def init_colors(self):
         curses.init_pair(11, curses.COLOR_WHITE, curses.COLOR_WHITE)
@@ -496,28 +655,52 @@ class Client:
         curses.echo()
         stdscr.keypad(0)
         curses.endwin()
+        # recieve_thread.join()
         self.client.close()
 
 class ButtonHandler:
     def __init__(self):
         self.game_button = {
-            'w': 'up',
-            'a': 'left',
-            's': 'down',
-            'd': 'right',
-            'q': 'quit',
-            'f': 'interact',
-            # 'r': 'toggle_panel',
-            'e': 'attack',
+            'up': 'w',
+            'down': 's',
+            'left': 'a',
+            'right': 'd',
+            'interact': 'f',
+            'attack': 'e',
+            'quit': 'q',
+            'menu_drop': 'm',
+            'slot1': '1',
+            'slot2': '2',
+            'slot3': '3',
+            'slot4': '4',
+            'slot5': '5',
+            'slot6': '6',
+            'slot7': '7',
+            'slot8': '8',
+            'slot9': '9',
         }
         self.client_button = {
             'r': 'toggle_panel'
         }
 
+    def change_keybinds(self, key, val):
+        for k, v in self.game_button.items():
+            if k == key:
+                self.game_button[k] = val
+        self.save_keybinds()
+        
+    def save_keybinds(self):
+        with open('keybinds.json', 'w') as f:
+            json.dump(self.game_button, f, indent=4)
+
+    def load_keybinds(self, file):
+        keys = json.load(open(f'{file}', 'r'))
+        self.game_button = keys
 
     def handle_button_press(self, command, renderer):
-        if command in self.game_button:
-            return self.game_button.get(command, None)
+        for k, v in self.game_button.items():
+            if command == v:
+                return k
         else:
             com = self.client_button.get(command, None)
             if com is not None:
